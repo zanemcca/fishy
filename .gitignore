@@ -2,3 +2,4 @@
 *.zip
 train/
 test_stg1/
+**.pyc

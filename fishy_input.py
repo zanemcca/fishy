@@ -5,7 +5,8 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
 from PIL import Image
-#import resize_image_with_crop_or_pad_pipeline as rp
+
+FLAGS = tf.app.flags.FLAGS
 
 IMAGE_LIMIT = -1 
 
@@ -105,13 +106,13 @@ def inputs(eval_data, data_dir, batch_size):
     if not tf.gfile.Exists(f):
       raise ValueError('Failed to find file: ' + f)
     else:
-      label = 0
+      label =-1 
       for i, c in enumerate(CATEGORIES):
         if c in f:
-          label = i + 1
+          label = i
           break
 
-      if(label != 0):
+      if(label >= 0):
         labels.append(label)
       else:
         raise ValueError('No label found for ' + f)
@@ -148,11 +149,12 @@ def inputs(eval_data, data_dir, batch_size):
   min_queue_examples = int(NUM_EXAMPLES_PER_EPOCH *
                            min_fraction_of_examples_in_queue)
 
-
   # Generate a batch of images and labels by building up a queue of examples.
-  return _generate_image_and_label_batch(float_image, label,
+  (imgs, lbls) =  _generate_image_and_label_batch(float_image, label,
                                          min_queue_examples, batch_size,
+                                         #shuffle=True), NUM_EXAMPLES_PER_EPOCH
                                          shuffle=True)
+  return imgs, lbls, NUM_EXAMPLES_PER_EPOCH
 
 
 def test_input():
@@ -161,7 +163,7 @@ def test_input():
   with tf.Graph().as_default():
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      xTrain, yTrain = inputs(False, os.getcwd(), BATCH_SIZE)
+      xTrain, yTrain, _ = inputs(False, os.getcwd(), BATCH_SIZE)
 
       s = tf.Session()
 
