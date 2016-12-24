@@ -5,10 +5,11 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
 from PIL import Image
+import generate_input_sets as gs
 
 FLAGS = tf.app.flags.FLAGS
 
-IMAGE_LIMIT = -1 
+IMAGE_LIMIT = 2046 
 
 IMAGE_HEIGHT= 90
 IMAGE_WIDTH= 160
@@ -73,52 +74,44 @@ def tfPrint(tensor):
     print(sess.run(tensor))
     sess.close()
 
-def inputs(eval_data, data_dir, batch_size):
+def read_set(data_dir, set_type):
+  if(set_type == 'Train'):
+    inputSet = gs.read_set(os.path.join(data_dir,'train.csv'))
+  elif(set_type == 'Test'):
+    inputSet = gs.read_set(os.path.join(data_dir,'test.csv'))
+  elif(set_type == 'CV'):
+    inputSet = gs.read_set(os.path.join(data_dir,'cv.csv'))
+  else:
+    raise ValueError('Unrecognized set ' + set_type) 
+
+  return inputSet
+
+def get_input_length(data_dir, set_type='Train'):
+  return min(len(read_set(data_dir, set_type)), IMAGE_LIMIT)
+
+def inputs(data_dir, batch_size, set_type='Train'):
   """
   Args:
-    eval_data: bool, indicating if one should use the train or eval data set.
-    data_dir: Path to the CIFAR-10 data directory.
     batch_size: Number of images per batch.
+    set_type: Indicates Train, Test or CV
 
   Returns:
     images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
     labels: Labels. 1D tensor of [batch_size] size.
   """
+  inputSet = read_set(data_dir, set_type)
 
-  if not eval_data:
-    data_dir = os.path.join(data_dir, 'train')
-  else:
-    data_dir = os.path.join(data_dir, 'test_stg1')
-
-  print('Fetching file names...')
-
-  filenames = []
-  for (dirpath, dirnames, files) in os.walk(data_dir):
-    filenames.extend([os.path.join(dirpath, f) for f in files if ('.jpg' in f or '.jpeg' in f)])
-
-  print('Found ' + str(len(filenames)) + ' filenames')
-  if(len(filenames) > IMAGE_LIMIT and IMAGE_LIMIT > 0):
-    print('Taking a random sampling of ' + str(IMAGE_LIMIT) + ' images')
-    filenames = random.sample(filenames, IMAGE_LIMIT)
-
-  labels = []
-  for f in filenames:
-    if not tf.gfile.Exists(f):
-      raise ValueError('Failed to find file: ' + f)
-    else:
-      label =-1 
-      for i, c in enumerate(CATEGORIES):
-        if c in f:
-          label = i
-          break
-
-      if(label >= 0):
-        labels.append(label)
-      else:
-        raise ValueError('No label found for ' + f)
+  if(len(inputSet) > IMAGE_LIMIT and IMAGE_LIMIT > 0):
+    inputSet = random.sample(inputSet, IMAGE_LIMIT)
 
   global NUM_EXAMPLES_PER_EPOCH 
-  NUM_EXAMPLES_PER_EPOCH = len(labels) 
+  NUM_EXAMPLES_PER_EPOCH = len(inputSet) 
+
+  filenames = []
+  labels = []
+  for s in inputSet:
+    filenames.append(s['filename'])
+    labels.append(s['label'])
 
   # Create a queue that produces the filenames to read.
   filenames = tf.convert_to_tensor(filenames, dtype=dtypes.string)
@@ -150,11 +143,9 @@ def inputs(eval_data, data_dir, batch_size):
                            min_fraction_of_examples_in_queue)
 
   # Generate a batch of images and labels by building up a queue of examples.
-  (imgs, lbls) =  _generate_image_and_label_batch(float_image, label,
+  return _generate_image_and_label_batch(float_image, label,
                                          min_queue_examples, batch_size,
-                                         #shuffle=True), NUM_EXAMPLES_PER_EPOCH
                                          shuffle=True)
-  return imgs, lbls, NUM_EXAMPLES_PER_EPOCH
 
 
 def test_input():
@@ -163,7 +154,7 @@ def test_input():
   with tf.Graph().as_default():
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      xTrain, yTrain, _ = inputs(False, os.getcwd(), BATCH_SIZE)
+      xTrain, yTrain = inputs(os.getcwd(), BATCH_SIZE, 'Test')
 
       s = tf.Session()
 

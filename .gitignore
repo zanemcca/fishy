@@ -3,3 +3,7 @@
 train/
 test_stg1/
 **.pyc
+cv.csv
+test.csv
+train.csv
+

@@ -1,33 +1,19 @@
 import os
+import math
 import tensorflow as tf
 import fishy_input
+import numpy as np
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('batch_size', 16, """Number of images per batch""")
-tf.app.flags.DEFINE_integer('num_epochs', 5, """Number of epochs to use for training""")
+tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images per batch""")
+tf.app.flags.DEFINE_integer('num_epochs', 10, """Number of epochs to use for training""")
 tf.app.flags.DEFINE_string('data_dir', os.getcwd(), """The data directory""")
 tf.app.flags.DEFINE_integer('use_fp16', False, """Train using floating point 16""")
-tf.app.flags.DEFINE_float('learning_rate', 0.1, """Learning Rate""")
+tf.app.flags.DEFINE_float('learning_rate', 0.01, """Learning Rate""")
 
-NUM_CLASSES = 8
-
-def _activation_summary(x):
-  """Helper to create summaries for activations.
-  Creates a summary that provides a histogram of activations.
-  Creates a summary that measures the sparsity of activations.
-  Args:
-    x: Tensor
-  Returns:
-    nothing
-  """
-  # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-  # session. This helps the clarity of presentation on tensorboard.
-  tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-  tf.contrib.deprecated.histogram_summary(tensor_name + '/activations', x)
-  tf.contrib.deprecated.scalar_summary(tensor_name + '/sparsity',
-                                       tf.nn.zero_fraction(x))
-
+CATEGORIES = ['ALB', 'BET', 'DOL', 'LAG', 'NoF', 'OTHER', 'SHARK', 'YFT']
+NUM_CLASSES = len(CATEGORIES) 
 
 def _variable_on_cpu(name, shape, initializer):
   """Helper to create a Variable stored on CPU memory.
@@ -69,11 +55,8 @@ def _variable_with_weight_decay(name, shape, stddev, wd):
 
 
 
-def inputs(eval_data):
+def inputs(set_type):
   """
-  Args:
-    eval_data: bool, indicating if one should use the train or eval data set.
-
   Returns:
     images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
     labels: Labels. 1D tensor of [batch_size] size.
@@ -81,18 +64,19 @@ def inputs(eval_data):
   Raises:
     ValueError: If no data_dir
   """
+
   if not FLAGS.data_dir:
     raise ValueError('Please supply a data_dir')
 
-  images, labels, imgCnt = fishy_input.inputs(eval_data=eval_data,
-                                        data_dir=FLAGS.data_dir,
-                                        batch_size=FLAGS.batch_size)
+  images, labels = fishy_input.inputs(data_dir=FLAGS.data_dir,
+                                        batch_size=FLAGS.batch_size,
+                                        set_type=set_type)
   if FLAGS.use_fp16:
     images = tf.cast(images, tf.float16)
     labels = tf.cast(labels, tf.float16)
-  return images, labels, imgCnt
+  return images, labels
 
-def inference(images):
+def inference(images, reuse=None):
   """Build the model
 
   Args:
@@ -102,10 +86,11 @@ def inference(images):
     Logits.
   """
 
-  # Convolution layer
-  with tf.variable_scope('conv1') as scope:
+  # Convolution layer (64 outputs channels for every pixel)
+  with tf.variable_scope('conv1', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
-                                          shape=[5, 5, 3, 64],
+                                          shape=[5, 5, 3, 64],  # [filterHeight, filterWidth, in_channels, output_channels]
+                                                                # => [filterHeight * filterWidth * in_channels, output_channels]
                                           stddev=5e-2,
                                           wd=0.0) 
     biases = _variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
@@ -121,23 +106,23 @@ def inference(images):
   pool = tf.nn.max_pool(norm, ksize=[1, 3, 3, 1],
                                strides=[1, 2, 2, 1], padding='SAME', name='pool')
 
-  with tf.variable_scope('local3') as scope:
+  with tf.variable_scope('local1', reuse=reuse) as scope:
     # Move everything into depth so we can perform a single matrix multiply.
     reshape = tf.reshape(pool, [FLAGS.batch_size, -1])
     dim = reshape.get_shape()[1].value
     weights = _variable_with_weight_decay('weights', shape=[dim, 384],
                                                   stddev=0.04, wd=0.004)
     biases = _variable_on_cpu('biases', [384], tf.constant_initializer(0.1))
-    local3 = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
+    local1 = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
 
   # Softmax layer
-  with tf.variable_scope('softmax_layer') as scope:
+  with tf.variable_scope('softmax_layer', reuse=reuse) as scope:
     weights = _variable_with_weight_decay('weights',
                                           shape=[384, NUM_CLASSES],
                                           stddev=5e-2,
                                           wd=0.0) 
     biases = _variable_on_cpu('biases', [NUM_CLASSES], tf.constant_initializer(0.0))
-    softmax_linear = tf.add(tf.matmul(local3, weights), biases, name=scope.name)
+    softmax_linear = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
 
   return softmax_linear
 
@@ -161,12 +146,72 @@ def train(total_loss):
   return apply_grad
 
 
+"""
+def SetupEvaluate():
+  #images, labels, num_examples_per_epoch = inputs(True)
+  images, labels, num_examples_per_epoch = inputs(False)
+  logits = inference(images, True)
+
+  predictions = tf.nn.softmax(logits)
+
+  return predictions, labels
+"""
+
+def evaluate(cleanup = False):
+  images, labels = inputs('Test')
+  num_examples_per_epoch = fishy_input.get_input_length(os.getcwd(), 'Test')
+  logits = inference(images, True)
+
+  predictions = tf.nn.softmax(logits)
+
+  coord = tf.train.Coordinator()
+  threads = tf.train.start_queue_runners(coord=coord)
+
+  try:
+      step = 0
+      steps_per_epoch = num_examples_per_epoch / FLAGS.batch_size
+      print('Evaluating\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_examples_per_epoch) + '\tSteps: ' + str(steps_per_epoch))
+
+      total = 0
+      while not coord.should_stop():
+          step += 1
+          probs= predictions.eval()
+          Y = labels.eval()
+
+          for i, y in enumerate(Y):
+            top = np.argmax(probs[i])
+            topChoices = [CATEGORIES[idx] for idx in np.argsort(probs[i])]
+            topChoices.reverse()
+            predic = ''
+            for c in topChoices:
+              predic = predic + c + ','
+            #print([round(p, 5) for p in probs[i]])
+            prob = probs[i][y]
+            cost = -math.log(max(min(prob, 1e15),1e-15))
+            #print('(y, p): (' + CATEGORIES[y] + ', ' + predic + ')\tP(y): ' + str(round(prob, 2)) + '\tCost: ' + str(round(cost,2)))
+            total = total + cost 
+
+          #print('Evaluated ' + str(step) + '\tCost = ' +  str(total / (step * FLAGS.batch_size)))
+          if step % steps_per_epoch == 0:
+            #print('\nThe final Cost = ' + str(total / num_examples_per_epoch))
+            return total / num_examples_per_epoch
+            break;
+
+  except tf.errors.OutOfRangeError:
+      print('out of range evaluate')
+
+  if(cleanup):
+      coord.request_stop()
+      print('requesting stop evaluate')
+
+
 def main(argv=None):
   print('Starting the session')
 
   with tf.Graph().as_default():
 
-      xTrain, yTrain, num_examples_per_epoch = inputs(False)
+      xTrain, yTrain = inputs('Train')
+      num_examples_per_epoch = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
 
       logits = inference(xTrain)
 
@@ -174,40 +219,40 @@ def main(argv=None):
 
       opt = train(lss)
 
+      #(predictions, labels) = SetupEvaluate()
+
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      s = tf.Session()
+      with tf.Session().as_default() as s:
+        s.run(init_op)
 
-      s.run(init_op)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=s, coord=coord)
 
-      coord = tf.train.Coordinator()
-      threads = tf.train.start_queue_runners(sess=s, coord=coord)
+        try:
+            step = 0
+            epoch = 0
+            steps_per_epoch = num_examples_per_epoch / FLAGS.batch_size
+            print('Epochs: '+ str(FLAGS.num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_examples_per_epoch) + '\tSteps: ' + str(steps_per_epoch * FLAGS.num_epochs))
 
-      try:
-          step = 0
-          epoch = 0
-          steps_per_epoch = num_examples_per_epoch / FLAGS.batch_size
-          print('Epochs: '+ str(FLAGS.num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_examples_per_epoch) + '\tSteps: ' + str(steps_per_epoch * FLAGS.num_epochs))
+            while not coord.should_stop() and epoch < FLAGS.num_epochs:
+                step += 1
+                (y, cst, _) = s.run([logits, lss, opt])
 
-          while not coord.should_stop() and epoch < FLAGS.num_epochs:
-              step += 1
-              (y, cst, _) = s.run([logits, lss, opt])
+                print(str(step) + '\tCost = ' +  str(cst))
+                if step % steps_per_epoch == 0:
 
-              print(str(step) + '\tCost = ' +  str(cst))
-              #X, Y = s.run([xTrain, yTrain])
-              #print(str(step), 'X=', str(X), 'Y=', str(Y))
-              #print(str(step), 'Y=', str(Y))
-              if step % steps_per_epoch == 0:
-                  epoch += 1
-                  print('\n--------------------------------------------------\n')
-                  print(' Completed the ' + str(epoch) + ' epoch')
-                  print('\n--------------------------------------------------\n')
+                    epoch += 1
+                    print('\n-------------------------------------------------------------------------\n')
+                    print('\tCompleted epoch ' + str(epoch) + ' with a final cost of ' + str(evaluate()))
+                    print('\n-------------------------------------------------------------------------\n')
 
-      except tf.errors.OutOfRangeError:
-          print('out of range')
-      finally:
-          coord.request_stop()
-          print('requesting stop')
+
+        except tf.errors.OutOfRangeError:
+            print('out of range')
+        finally:
+            coord.request_stop()
+            print('requesting stop')
 
 if __name__ == '__main__':
   tf.app.run()
