@@ -7,10 +7,10 @@ import numpy as np
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images per batch""")
-tf.app.flags.DEFINE_integer('num_epochs', 10, """Number of epochs to use for training""")
+tf.app.flags.DEFINE_integer('num_epochs', 1000, """Number of epochs to use for training""")
 tf.app.flags.DEFINE_string('data_dir', os.getcwd(), """The data directory""")
 tf.app.flags.DEFINE_integer('use_fp16', False, """Train using floating point 16""")
-tf.app.flags.DEFINE_float('learning_rate', 0.01, """Learning Rate""")
+tf.app.flags.DEFINE_float('learning_rate', 0.05, """Learning Rate""")
 
 CATEGORIES = ['ALB', 'BET', 'DOL', 'LAG', 'NoF', 'OTHER', 'SHARK', 'YFT']
 NUM_CLASSES = len(CATEGORIES) 
@@ -146,65 +146,6 @@ def train(total_loss):
   return apply_grad
 
 
-"""
-def SetupEvaluate():
-  #images, labels, num_examples_per_epoch = inputs(True)
-  images, labels, num_examples_per_epoch = inputs(False)
-  logits = inference(images, True)
-
-  predictions = tf.nn.softmax(logits)
-
-  return predictions, labels
-"""
-
-def evaluate(cleanup = False):
-  images, labels = inputs('Test')
-  num_examples_per_epoch = fishy_input.get_input_length(os.getcwd(), 'Test')
-  logits = inference(images, True)
-
-  predictions = tf.nn.softmax(logits)
-
-  coord = tf.train.Coordinator()
-  threads = tf.train.start_queue_runners(coord=coord)
-
-  try:
-      step = 0
-      steps_per_epoch = num_examples_per_epoch / FLAGS.batch_size
-      print('Evaluating\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_examples_per_epoch) + '\tSteps: ' + str(steps_per_epoch))
-
-      total = 0
-      while not coord.should_stop():
-          step += 1
-          probs= predictions.eval()
-          Y = labels.eval()
-
-          for i, y in enumerate(Y):
-            top = np.argmax(probs[i])
-            topChoices = [CATEGORIES[idx] for idx in np.argsort(probs[i])]
-            topChoices.reverse()
-            predic = ''
-            for c in topChoices:
-              predic = predic + c + ','
-            #print([round(p, 5) for p in probs[i]])
-            prob = probs[i][y]
-            cost = -math.log(max(min(prob, 1e15),1e-15))
-            #print('(y, p): (' + CATEGORIES[y] + ', ' + predic + ')\tP(y): ' + str(round(prob, 2)) + '\tCost: ' + str(round(cost,2)))
-            total = total + cost 
-
-          #print('Evaluated ' + str(step) + '\tCost = ' +  str(total / (step * FLAGS.batch_size)))
-          if step % steps_per_epoch == 0:
-            #print('\nThe final Cost = ' + str(total / num_examples_per_epoch))
-            return total / num_examples_per_epoch
-            break;
-
-  except tf.errors.OutOfRangeError:
-      print('out of range evaluate')
-
-  if(cleanup):
-      coord.request_stop()
-      print('requesting stop evaluate')
-
-
 def main(argv=None):
   print('Starting the session')
 
@@ -219,7 +160,7 @@ def main(argv=None):
 
       opt = train(lss)
 
-      #(predictions, labels) = SetupEvaluate()
+      saver = tf.train.Saver()
 
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
@@ -237,15 +178,23 @@ def main(argv=None):
 
             while not coord.should_stop() and epoch < FLAGS.num_epochs:
                 step += 1
-                (y, cst, _) = s.run([logits, lss, opt])
+                (probs, cst,Y,_) = s.run([logits, lss, yTrain, opt])
 
-                print(str(step) + '\tCost = ' +  str(cst))
+                cor = 0 
+                for i, y in enumerate(Y):
+                  top = np.argmax(probs[i])
+                  if(top == y):
+                    cor += 1
+
+                print(str(step) + '\tPercentCorrect = ' + str(cor * 100 / FLAGS.batch_size) + '\tCost = ' +  str(cst))
+                save_path = saver.save(s, '/tmp/fishy_model.ckpt')
                 if step % steps_per_epoch == 0:
-
                     epoch += 1
                     print('\n-------------------------------------------------------------------------\n')
-                    print('\tCompleted epoch ' + str(epoch) + ' with a final cost of ' + str(evaluate()))
+                    #print('\tCompleted epoch ' + str(epoch) + ' with a final cost of ' + str(evaluate()))
+                    print('\tCompleted epoch ' + str(epoch)) 
                     print('\n-------------------------------------------------------------------------\n')
+
 
 
         except tf.errors.OutOfRangeError:
