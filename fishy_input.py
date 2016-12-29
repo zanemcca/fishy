@@ -6,23 +6,11 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
 from PIL import Image
 import generate_input_sets as gs
+import fishy_constants as const
 
 FLAGS = tf.app.flags.FLAGS
 
-IMAGE_LIMIT = 2046 
-
-#IMAGE_HEIGHT= 90
-#IMAGE_WIDTH= 160
-IMAGE_HEIGHT= 45
-IMAGE_WIDTH= 80
-
-CATEGORIES = gs.CATEGORY_NAMES 
-
-NUM_CLASSES = len(CATEGORIES)
 NUM_EXAMPLES_PER_EPOCH = 32
-
-NUM_EPOCHS = 3 
-BATCH_SIZE = 32
 
 def read_image(filename_queue):
   label = filename_queue[1] 
@@ -89,7 +77,7 @@ def read_set(data_dir, set_type):
   return inputSet
 
 def get_input_length(data_dir, set_type='Train'):
-  return min(len(read_set(data_dir, set_type)), IMAGE_LIMIT)
+  return min(len(read_set(data_dir, set_type)), const.IMAGE_LIMIT)
 
 def inputs(data_dir, batch_size, set_type='Train'):
   """
@@ -103,8 +91,8 @@ def inputs(data_dir, batch_size, set_type='Train'):
   """
   inputSet = read_set(data_dir, set_type)
 
-  if(len(inputSet) > IMAGE_LIMIT and IMAGE_LIMIT > 0):
-    inputSet = random.sample(inputSet, IMAGE_LIMIT)
+  if(len(inputSet) > const.IMAGE_LIMIT and const.IMAGE_LIMIT > 0):
+    inputSet = random.sample(inputSet, const.IMAGE_LIMIT)
 
   global NUM_EXAMPLES_PER_EPOCH 
   NUM_EXAMPLES_PER_EPOCH = len(inputSet) 
@@ -127,8 +115,8 @@ def inputs(data_dir, batch_size, set_type='Train'):
   #reshaped_image = tf.image.convert_image_dtype(read_input, dtype=tf.float32)
   reshaped_image = tf.cast(read_input, tf.float32)
 
-  height = IMAGE_HEIGHT
-  width = IMAGE_WIDTH
+  height = const.IMAGE_HEIGHT
+  width = const.IMAGE_WIDTH
 
   # Image processing for evaluation.
   # Crop the central [height, width] of the image.
@@ -152,11 +140,13 @@ def inputs(data_dir, batch_size, set_type='Train'):
 
 def test_input():
   print('Starting the session')
+  batch_size = 32
+  num_epochs = 3
 
   with tf.Graph().as_default():
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      xTrain, yTrain = inputs(os.getcwd(), BATCH_SIZE, 'Test')
+      xTrain, yTrain = inputs(os.getcwd(), batch_size, 'Test')
 
       s = tf.Session()
 
@@ -168,10 +158,10 @@ def test_input():
       try:
           step = 0
           epoch = 0
-          steps_per_epoch = NUM_EXAMPLES_PER_EPOCH / BATCH_SIZE
-          print('Epochs: '+ str(NUM_EPOCHS) + '\tBatch_Size: ' + str(BATCH_SIZE) + '\tSamples: ' + str(NUM_EXAMPLES_PER_EPOCH) + '\tSteps: ' + str(steps_per_epoch * NUM_EPOCHS))
+          steps_per_epoch = NUM_EXAMPLES_PER_EPOCH / batch_size
+          print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(batch_size) + '\tSamples: ' + str(NUM_EXAMPLES_PER_EPOCH) + '\tSteps: ' + str(steps_per_epoch * num_epochs))
 
-          while not coord.should_stop() and epoch < NUM_EPOCHS:
+          while not coord.should_stop() and epoch < num_epochs:
               X, Y = s.run([xTrain, yTrain])
               step += 1
               #print(str(step), 'X=', str(X), 'Y=', str(Y))
