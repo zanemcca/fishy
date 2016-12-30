@@ -91,9 +91,18 @@ def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
   """
   inputSet = read_set(data_dir, set_type)
 
-  if(len(inputSet) > limit and limit > 0):
-    #inputSet = random.sample(inputSet, limit)
-    inputSet = inputSet[:limit]
+  if(len(inputSet) / const.NUM_CLASSES > limit and limit > 0):
+    classes = [0] * const.NUM_CLASSES
+
+    tempSet = []
+    for p in inputSet:
+      if(classes[p['label']] < limit):
+        classes[p['label']] += 1
+        tempSet.append(p)
+      elif ( sum(classes) == (limit * const.NUM_CLASSES)):
+        break
+
+    inputSet = tempSet
 
   global NUM_EXAMPLES_PER_EPOCH 
   NUM_EXAMPLES_PER_EPOCH = len(inputSet) 
