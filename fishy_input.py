@@ -79,7 +79,7 @@ def read_set(data_dir, set_type):
 def get_input_length(data_dir, set_type='Train'):
   return min(len(read_set(data_dir, set_type)), const.IMAGE_LIMIT)
 
-def inputs(data_dir, batch_size, set_type='Train'):
+def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
   """
   Args:
     batch_size: Number of images per batch.
@@ -91,8 +91,9 @@ def inputs(data_dir, batch_size, set_type='Train'):
   """
   inputSet = read_set(data_dir, set_type)
 
-  if(len(inputSet) > const.IMAGE_LIMIT and const.IMAGE_LIMIT > 0):
-    inputSet = random.sample(inputSet, const.IMAGE_LIMIT)
+  if(len(inputSet) > limit and limit > 0):
+    #inputSet = random.sample(inputSet, limit)
+    inputSet = inputSet[:limit]
 
   global NUM_EXAMPLES_PER_EPOCH 
   NUM_EXAMPLES_PER_EPOCH = len(inputSet) 
@@ -135,7 +136,7 @@ def inputs(data_dir, batch_size, set_type='Train'):
   # Generate a batch of images and labels by building up a queue of examples.
   return _generate_image_and_label_batch(float_image, label,
                                          min_queue_examples, batch_size,
-                                         shuffle=True)
+                                         shuffle=False)
 
 
 def test_input():
