@@ -164,8 +164,8 @@ def main(argv=None):
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
       writer = tf.summary.FileWriter(FLAGS.log_dir, graph=tf.get_default_graph())
-      tf.summary.scalar('Training Cost', lss)
-      tf.summary.scalar('Accuracy', accuracy)
+      tf.summary.scalar('Cost Training', lss)
+      tf.summary.scalar('Accuracy Training', accuracy)
 
       summary = tf.summary.merge_all()
 

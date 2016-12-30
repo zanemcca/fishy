@@ -27,8 +27,8 @@ def evaluate(set_type='Test'):
     saver = tf.train.Saver()
 
     writer = tf.summary.FileWriter(FLAGS.log_dir, graph=tf.get_default_graph())
-    tf.summary.scalar('Evaluation Cost', lss)
-    tf.summary.scalar('Evaluation Accuracy', accuracy)
+    tf.summary.scalar('Cost Evaluation', lss)
+    tf.summary.scalar('Accuracy Evaluation', accuracy)
 
     summary = tf.summary.merge_all()
 
@@ -92,4 +92,4 @@ def evaluate(set_type='Test'):
           print('requesting stop evaluate')
 
 if __name__ == '__main__':
-  evaluate('Train')
+  evaluate('CV')
