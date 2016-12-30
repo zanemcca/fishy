@@ -24,9 +24,11 @@ def evaluate(set_type='Test'):
     correct_prediction = tf.equal(tf.cast(labels, tf.int64), tf.argmax(predictions, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
 
+    global_step = tf.cast(fishy.get_global_step(), tf.int64)
+
     saver = tf.train.Saver()
 
-    writer = tf.summary.FileWriter(FLAGS.log_dir, graph=tf.get_default_graph())
+    writer = tf.summary.FileWriter(FLAGS.log_dir + '/' + str(const.LOG_NUMBER), graph=tf.get_default_graph())
     tf.summary.scalar('Cost Evaluation', lss)
     tf.summary.scalar('Accuracy Evaluation', accuracy)
 
@@ -46,11 +48,11 @@ def evaluate(set_type='Test'):
           correct = 0
           while not coord.should_stop():
               step += 1
-              (loss, acc) = s.run([lss, accuracy])
+              (stp, loss, acc) = s.run([global_step, lss, accuracy])
 
               summ = s.run(summary)
 
-              writer.add_summary(summ, step * FLAGS.batch_size)
+              writer.add_summary(summ, stp * FLAGS.batch_size)
 
               """
               probs = predictions.eval()

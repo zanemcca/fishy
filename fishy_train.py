@@ -23,11 +23,13 @@ def train():
       correct_prediction = tf.equal(tf.cast(yTrain, tf.int64), tf.argmax(predictions, 1))
       accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
 
+      global_step = tf.cast(fishy.get_global_step(), tf.int64)
+
       saver = tf.train.Saver()
 
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      writer = tf.summary.FileWriter(FLAGS.log_dir, graph=tf.get_default_graph())
+      writer = tf.summary.FileWriter(FLAGS.log_dir + '/' + str(const.LOG_NUMBER), graph=tf.get_default_graph())
       tf.summary.scalar('Cost Training', lss)
       tf.summary.scalar('Accuracy Training', accuracy)
 
@@ -40,15 +42,13 @@ def train():
         threads = tf.train.start_queue_runners(sess=s, coord=coord)
 
         try:
-            step = 0
             epoch = 0
             steps_per_epoch = num_examples_per_epoch / FLAGS.batch_size
             print('Epochs: '+ str(FLAGS.num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_examples_per_epoch) + '\tSteps: ' + str(steps_per_epoch * FLAGS.num_epochs))
 
             while not coord.should_stop() and epoch < FLAGS.num_epochs:
-                step += 1
                 (summ, _) = s.run([summary, opt])
-                (accur, cst) = s.run([accuracy, lss])
+                (step, accur, cst) = s.run([global_step, accuracy, lss])
 
                 writer.add_summary(summ, step * FLAGS.batch_size)
         

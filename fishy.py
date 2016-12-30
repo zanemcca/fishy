@@ -47,7 +47,7 @@ def _variable_with_weight_decay(name, shape, stddev, wd):
 
 
 
-def inputs(set_type):
+def inputs(set_type, limit=const.IMAGE_LIMIT):
   """
   Returns:
     images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
@@ -62,7 +62,8 @@ def inputs(set_type):
 
   images, labels = fishy_input.inputs(data_dir=FLAGS.data_dir,
                                         batch_size=FLAGS.batch_size,
-                                        set_type=set_type)
+                                        set_type=set_type,
+                                        limit=limit)
   if FLAGS.use_fp16:
     images = tf.cast(images, tf.float16)
     labels = tf.cast(labels, tf.float16)
@@ -131,14 +132,136 @@ def loss(logits, labels):
   #return tf.Graph.add_n(tf.get_collection('losses'))
   return cross_entropy_mean
 
+def get_global_step():
+  with tf.device('/cpu:0'):
+    try:
+      with tf.variable_scope('global', reuse=False) as scope:
+        _global_step = tf.get_variable('global_step', [], trainable=False, initializer=tf.constant_initializer(0.0))
+    except ValueError:
+      with tf.variable_scope('global', reuse=True) as scope:
+        _global_step = tf.get_variable('global_step', [], trainable=False, initializer=tf.constant_initializer(0.0))
+
+  return _global_step
+
 
 def train(total_loss):
+  global_step = get_global_step()
+
   opt = tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
   grads = opt.compute_gradients(total_loss)
 
-  apply_grad = opt.apply_gradients(grads)
+  apply_grad = opt.apply_gradients(grads, global_step=global_step)
 
   return apply_grad
+
+
+def main(argv=None):
+  num_epochs = 10 
+
+  with tf.Graph().as_default():
+    num_examples = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
+    cv_length = fishy_input.get_input_length(FLAGS.data_dir, 'CV')
+    xCV, yCV = inputs('CV')
+
+    X = tf.placeholder(tf.float32, name='X', shape=(FLAGS.batch_size, const.IMAGE_WIDTH, const.IMAGE_HEIGHT, const.IMAGE_CHANNELS))
+    Y = tf.placeholder(tf.int32, name='Y', shape=(FLAGS.batch_size,))
+
+    predictions, logits = inference(X)
+
+    lss = loss(logits, Y)
+
+    opt = train(lss)
+
+    correct_prediction = tf.equal(tf.cast(Y, tf.int64), tf.argmax(predictions, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
+
+    global_step = tf.cast(get_global_step(), tf.int64)
+
+    init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+
+    train_log = FLAGS.log_dir + '/train'
+    cv_log = FLAGS.log_dir + '/cv'
+
+    cv_writer = tf.summary.FileWriter(cv_log, graph=tf.get_default_graph())
+    train_writer = tf.summary.FileWriter(train_log, graph=tf.get_default_graph())
+
+    Loss = tf.placeholder(tf.float32, name='Loss_Placeholder')
+    Accuracy = tf.placeholder(tf.float32, name='Accuracy_Placeholder')
+    tf.summary.scalar('Cost', Loss)
+    tf.summary.scalar('Accuracy', Accuracy)
+
+    summary = tf.summary.merge_all()
+
+    for i in [1, 3, 10, 30, 100, 300, 1000, 3000]:
+      xTrain, yTrain = inputs('Train', i)
+
+      with tf.Session().as_default() as s:
+        s.run(init_op)
+
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=s, coord=coord)
+
+        try:
+            epoch = 0
+            steps_per_epoch = math.ceil(float(i) / FLAGS.batch_size)
+            print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(i) + '\tSteps: ' + str(steps_per_epoch * num_epochs))
+
+            # Training phase
+            step = 0
+            training_cost = 0
+            training_accuracy = 0
+            while not coord.should_stop() and epoch < num_epochs:
+              (x, y) = s.run([xTrain, yTrain])
+              (step, accur, cst, _) = s.run([global_step, accuracy, lss, opt], feed_dict={ X: x, Y: y })
+
+              if(epoch == num_epochs - 1):
+                training_cost += cst
+                training_accuracy += accur
+      
+              print(str(step) + '\tAccuracy = ' + str(round(accur, 3)) + '\tCost = ' +  str(cst))
+              if (step + 1) % steps_per_epoch == 0:
+                  epoch += 1
+                  print('Completed epoch ' + str(epoch) +'\n') 
+
+            training_cost /= steps_per_epoch
+            training_accuracy /= steps_per_epoch
+            summ = s.run(summary, feed_dict={ Loss: min(training_cost, 3), Accuracy: min(training_accuracy, 3) })
+            train_writer.add_summary(summ, i)
+            
+
+            # Evaluation phase
+            print('\nEvaluating...\n')
+            steps_per_epoch = math.ceil(float(cv_length) / FLAGS.batch_size)
+            eval_cost = 0
+            eval_accuracy = 0
+            stp = 0
+            while not coord.should_stop():
+              (x, y) = s.run([xCV, yCV])
+              (accur, cst) = s.run([accuracy, lss], feed_dict={ X: x, Y: y })
+
+              eval_cost += cst
+              eval_accuracy += accur 
+      
+              stp += 1
+              print('Evaluation - Accuracy = ' + str(round(accur, 3)) + '\tCost = ' +  str(cst))
+              if stp == steps_per_epoch:
+                eval_cost /= steps_per_epoch
+                eval_accuracy /= steps_per_epoch
+                summ = s.run(summary, feed_dict={ Loss: min(eval_cost, 3), Accuracy: min(eval_accuracy, 3) })
+                cv_writer.add_summary(summ, i)
+                print('\n-------------------------------------------------------------------------\n')
+                print('\nEvaluation\tCost = ' + str(round(eval_cost, 3)) + ' with ' + str(round(eval_accuracy * 100)) + '% accuracy')
+                print('\nTraining\tCost = ' + str(round(training_cost, 3)) + ' with ' + str(round(training_accuracy * 100)) + '% accuracy')
+                print('\n-------------------------------------------------------------------------\n')
+                break
+
+                
+        except tf.errors.OutOfRangeError:
+            print('out of range')
+        finally:
+            coord.request_stop()
+            print('requesting stop')
+
 
 if __name__ == '__main__':
   tf.app.run()
