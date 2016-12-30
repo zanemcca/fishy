@@ -3,17 +3,10 @@ import math
 import tensorflow as tf
 import fishy_input
 import numpy as np
+import fishy_constants as const
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images per batch""")
-tf.app.flags.DEFINE_integer('num_epochs', 1000, """Number of epochs to use for training""")
-tf.app.flags.DEFINE_string('data_dir', os.getcwd(), """The data directory""")
-tf.app.flags.DEFINE_integer('use_fp16', False, """Train using floating point 16""")
-tf.app.flags.DEFINE_float('learning_rate', 0.05, """Learning Rate""")
-
-CATEGORIES = ['ALB', 'BET', 'DOL', 'LAG', 'NoF', 'OTHER', 'SHARK', 'YFT']
-NUM_CLASSES = len(CATEGORIES) 
 
 def _variable_on_cpu(name, shape, initializer):
   """Helper to create a Variable stored on CPU memory.
@@ -118,13 +111,16 @@ def inference(images, reuse=None):
   # Softmax layer
   with tf.variable_scope('softmax_layer', reuse=reuse) as scope:
     weights = _variable_with_weight_decay('weights',
-                                          shape=[384, NUM_CLASSES],
+                                          shape=[384, const.NUM_CLASSES],
                                           stddev=5e-2,
                                           wd=0.0) 
-    biases = _variable_on_cpu('biases', [NUM_CLASSES], tf.constant_initializer(0.0))
-    softmax_linear = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
+    biases = _variable_on_cpu('biases', [const.NUM_CLASSES], tf.constant_initializer(0.0))
 
-  return softmax_linear
+    logits = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
+
+    predictions = tf.nn.softmax(logits)
+
+  return predictions, logits
 
 
 def loss(logits, labels):
@@ -154,15 +150,24 @@ def main(argv=None):
       xTrain, yTrain = inputs('Train')
       num_examples_per_epoch = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
 
-      logits = inference(xTrain)
+      predictions, logits = inference(xTrain)
 
       lss = loss(logits, yTrain)
 
       opt = train(lss)
 
+      correct_prediction = tf.equal(tf.cast(yTrain, tf.int64), tf.argmax(predictions, 1))
+      accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
+
       saver = tf.train.Saver()
 
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+
+      writer = tf.summary.FileWriter(FLAGS.log_dir, graph=tf.get_default_graph())
+      tf.summary.scalar('Training Cost', lss)
+      tf.summary.scalar('Accuracy', accuracy)
+
+      summary = tf.summary.merge_all()
 
       with tf.Session().as_default() as s:
         s.run(init_op)
@@ -178,15 +183,13 @@ def main(argv=None):
 
             while not coord.should_stop() and epoch < FLAGS.num_epochs:
                 step += 1
-                (probs, cst,Y,_) = s.run([logits, lss, yTrain, opt])
+                (summ, _) = s.run([summary, opt])
+                (accur, cst) = s.run([accuracy, lss])
 
-                cor = 0 
-                for i, y in enumerate(Y):
-                  top = np.argmax(probs[i])
-                  if(top == y):
-                    cor += 1
-
-                print(str(step) + '\tPercentCorrect = ' + str(cor * 100 / FLAGS.batch_size) + '\tCost = ' +  str(cst))
+                writer.add_summary(summ, step * FLAGS.batch_size)
+        
+                #print(str(step))
+                print(str(step) + '\tAccuracy = ' + str(round(accur, 3)) + '\tCost = ' +  str(cst))
                 save_path = saver.save(s, '/tmp/fishy_model.ckpt')
                 if step % steps_per_epoch == 0:
                     epoch += 1
