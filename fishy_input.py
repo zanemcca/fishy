@@ -16,7 +16,7 @@ def read_image(filename_queue):
   label = filename_queue[1] 
 
   image = tf.read_file(filename_queue[0])
-  img = tf.image.decode_jpeg(image, 3)
+  img = tf.image.decode_jpeg(image, const.IMAGE_CHANNELS)
 
   return img, label 
 

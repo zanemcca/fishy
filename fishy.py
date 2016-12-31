@@ -82,7 +82,7 @@ def inference(images, reuse=None):
   # Convolution layer (64 outputs channels for every pixel)
   with tf.variable_scope('conv1', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
-                                          shape=[5, 5, 3, 64],  # [filterHeight, filterWidth, in_channels, output_channels]
+                                          shape=[5, 5, const.IMAGE_CHANNELS, 64],  # [filterHeight, filterWidth, in_channels, output_channels]
                                                                 # => [filterHeight * filterWidth * in_channels, output_channels]
                                           stddev=5e-2,
                                           wd=0.0) 
@@ -156,7 +156,8 @@ def train(total_loss):
 
 
 def main(argv=None):
-  num_epochs = 10 
+  total_samples = 8000 
+  min_epochs = 5
 
   with tf.Graph().as_default():
     num_examples = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
@@ -179,8 +180,8 @@ def main(argv=None):
 
     init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-    train_log = FLAGS.log_dir + '/train'
-    cv_log = FLAGS.log_dir + '/cv'
+    train_log = FLAGS.log_dir + '/train/' + str(const.EVAL_LOG_NUMBER)
+    cv_log = FLAGS.log_dir + '/cv/' + str(const.EVAL_LOG_NUMBER)
 
     cv_writer = tf.summary.FileWriter(cv_log, graph=tf.get_default_graph())
     train_writer = tf.summary.FileWriter(train_log, graph=tf.get_default_graph())
@@ -192,8 +193,12 @@ def main(argv=None):
 
     summary = tf.summary.merge_all()
 
-    for i in [1, 3, 10, 30, 100, 300, 1000, 3000]:
+    for i in [1, 3, 10, 30, 100, 300, 1000]:
       xTrain, yTrain = inputs('Train', i)
+
+      num_samples = i * const.NUM_CLASSES
+      steps_per_epoch = math.ceil(float(num_samples) / FLAGS.batch_size)
+      num_epochs = max(min_epochs, math.ceil(float(total_samples) / max(num_samples, FLAGS.batch_size)))
 
       with tf.Session().as_default() as s:
         s.run(init_op)
@@ -203,13 +208,14 @@ def main(argv=None):
 
         try:
             epoch = 0
-            steps_per_epoch = math.ceil(float(i) / FLAGS.batch_size)
-            print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(i) + '\tSteps: ' + str(steps_per_epoch * num_epochs))
 
             # Training phase
+            print('\nTraining...\n')
+            print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_samples) + '\tSteps: ' + str(steps_per_epoch * num_epochs) + '\n')
             step = 0
             training_cost = 0
             training_accuracy = 0
+            last_error = 0
             while not coord.should_stop() and epoch < num_epochs:
               (x, y) = s.run([xTrain, yTrain])
               (step, accur, cst, _) = s.run([global_step, accuracy, lss, opt], feed_dict={ X: x, Y: y })
@@ -218,15 +224,15 @@ def main(argv=None):
                 training_cost += cst
                 training_accuracy += accur
       
-              print(str(step) + '\tAccuracy = ' + str(round(accur, 3)) + '\tCost = ' +  str(cst))
+              print('Step: ' + str(step) + ' \tAccuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst))
               if (step + 1) % steps_per_epoch == 0:
                   epoch += 1
-                  print('Completed epoch ' + str(epoch) +'\n') 
+                  print('') 
 
             training_cost /= steps_per_epoch
             training_accuracy /= steps_per_epoch
-            summ = s.run(summary, feed_dict={ Loss: min(training_cost, 3), Accuracy: min(training_accuracy, 3) })
-            train_writer.add_summary(summ, i)
+            summ = s.run(summary, feed_dict={ Loss: training_cost, Accuracy: training_accuracy })
+            train_writer.add_summary(summ, num_samples)
             
 
             # Evaluation phase
@@ -243,15 +249,15 @@ def main(argv=None):
               eval_accuracy += accur 
       
               stp += 1
-              print('Evaluation - Accuracy = ' + str(round(accur, 3)) + '\tCost = ' +  str(cst))
+              print('Evaluation - Accuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst))
               if stp == steps_per_epoch:
                 eval_cost /= steps_per_epoch
                 eval_accuracy /= steps_per_epoch
-                summ = s.run(summary, feed_dict={ Loss: min(eval_cost, 3), Accuracy: min(eval_accuracy, 3) })
-                cv_writer.add_summary(summ, i)
+                summ = s.run(summary, feed_dict={ Loss: eval_cost, Accuracy: eval_accuracy })
+                cv_writer.add_summary(summ, num_samples)
                 print('\n-------------------------------------------------------------------------\n')
-                print('\nEvaluation\tCost = ' + str(round(eval_cost, 3)) + ' with ' + str(round(eval_accuracy * 100)) + '% accuracy')
-                print('\nTraining\tCost = ' + str(round(training_cost, 3)) + ' with ' + str(round(training_accuracy * 100)) + '% accuracy')
+                print('\nEvaluation\tCost = ' + str(round(eval_cost, 3)) + ' with ' + str(round(eval_accuracy * 100, 1)) + '% accuracy')
+                print('\nTraining\tCost = ' + str(round(training_cost, 3)) + ' with ' + str(round(training_accuracy * 100, 1)) + '% accuracy')
                 print('\n-------------------------------------------------------------------------\n')
                 break
 
