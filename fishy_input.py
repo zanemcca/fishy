@@ -18,7 +18,7 @@ def read_image(filename_queue):
   image = tf.read_file(filename_queue[0])
   img = tf.image.decode_jpeg(image, const.IMAGE_CHANNELS)
 
-  return img, label, filename_queue[0] 
+  return img, label, filename_queue[0]
 
 def _generate_image_and_label_batch(image, label, filename, min_queue_examples,
                                     batch_size, shuffle):
@@ -65,22 +65,10 @@ def tfPrint(tensor):
     print(sess.run(tensor))
     sess.close()
 
-def read_set(data_dir, set_type):
-  if(set_type == 'Train'):
-    inputSet = gs.read_set(os.path.join(data_dir,'train.csv'))
-  elif(set_type == 'Test'):
-    inputSet = gs.read_set(os.path.join(data_dir,'test.csv'))
-  elif(set_type == 'CV'):
-    inputSet = gs.read_set(os.path.join(data_dir,'cv.csv'))
-  else:
-    raise ValueError('Unrecognized set ' + set_type) 
+def get_input_length(filename):
+  return min(len(gs.read_set(filename)), const.IMAGE_LIMIT)
 
-  return inputSet
-
-def get_input_length(data_dir, set_type='Train'):
-  return min(len(read_set(data_dir, set_type)), const.IMAGE_LIMIT)
-
-def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
+def inputs(filename, batch_size, limit=const.IMAGE_LIMIT):
   """
   Args:
     batch_size: Number of images per batch.
@@ -90,7 +78,7 @@ def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
     images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
     labels: Labels. 1D tensor of [batch_size] size.
   """
-  inputSet = read_set(data_dir, set_type)
+  inputSet = gs.read_set(os.path.join(FLAGS.data_dir, filename))
 
   if(len(inputSet) / const.NUM_CLASSES > limit and limit > 0):
     classes = [0] * const.NUM_CLASSES
@@ -111,7 +99,7 @@ def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
   filenames = []
   labels = []
   for s in inputSet:
-    filenames.append(s['filename'])
+    filenames.append(os.path.join(FLAGS.data_dir, s['filename']))
     labels.append(s['label'])
 
   # Create a queue that produces the filenames to read.
@@ -157,7 +145,7 @@ def test_input():
   with tf.Graph().as_default():
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      xTrain, yTrain, filenames = inputs(os.getcwd(), batch_size, 'Test')
+      xTrain, yTrain, filenames = inputs('test.csv', batch_size)
 
       s = tf.Session()
 
