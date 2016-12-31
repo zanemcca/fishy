@@ -29,7 +29,7 @@ def train():
 
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      writer = tf.summary.FileWriter(FLAGS.log_dir + '/' + str(const.LOG_NUMBER), graph=tf.get_default_graph())
+      writer = tf.summary.FileWriter(FLAGS.log_dir + '/' + FLAGS.name, graph=tf.get_default_graph())
       tf.summary.scalar('Cost Training', lss)
       tf.summary.scalar('Accuracy Training', accuracy)
 

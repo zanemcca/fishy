@@ -18,9 +18,9 @@ def read_image(filename_queue):
   image = tf.read_file(filename_queue[0])
   img = tf.image.decode_jpeg(image, const.IMAGE_CHANNELS)
 
-  return img, label 
+  return img, label, filename_queue[0] 
 
-def _generate_image_and_label_batch(image, label, min_queue_examples,
+def _generate_image_and_label_batch(image, label, filename, min_queue_examples,
                                     batch_size, shuffle):
   """Construct a queued batch of images and labels.
 
@@ -36,19 +36,20 @@ def _generate_image_and_label_batch(image, label, min_queue_examples,
     images: Images. 4D tensor of [batch_size, height, width, 3] size.
     labels: Labels. 1D tensor of [batch_size] size.
   """
+
   # Create a queue that shuffles the examples, and then
   # read 'batch_size' images + labels from the example queue.
   num_preprocess_threads = 16
   if shuffle:
-    images, label_batch = tf.train.shuffle_batch(
-        [image, label],
+    images, label_batch, filenames = tf.train.shuffle_batch(
+        [image, label, filename],
         batch_size=batch_size,
         num_threads=num_preprocess_threads,
         capacity=min_queue_examples + 3 * batch_size,
         min_after_dequeue=min_queue_examples)
   else:
-    images, label_batch = tf.train.batch(
-        [image, label],
+    images, label_batch, filenames = tf.train.batch(
+        [image, label, filename],
         batch_size=batch_size,
         num_threads=num_preprocess_threads,
         capacity=min_queue_examples + 3 * batch_size)
@@ -56,7 +57,7 @@ def _generate_image_and_label_batch(image, label, min_queue_examples,
   # Display the training images in the visualizer.
   tf.summary.image('images', images)
 
-  return images, tf.reshape(label_batch, [batch_size])
+  return images, tf.reshape(label_batch, [batch_size]), filenames
 
 def tfPrint(tensor):
   with tf.Session() as sess:
@@ -119,7 +120,7 @@ def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
 
   filename_queue = tf.train.slice_input_producer([filenames, labels])
 
-  read_input, label = read_image(filename_queue)
+  read_input, label, name = read_image(filename_queue)
 
   # Read examples from files in the filename queue.
   #reshaped_image = tf.image.convert_image_dtype(read_input, dtype=tf.float32)
@@ -143,7 +144,7 @@ def inputs(data_dir, batch_size, set_type='Train', limit=const.IMAGE_LIMIT):
                            min_fraction_of_examples_in_queue)
 
   # Generate a batch of images and labels by building up a queue of examples.
-  return _generate_image_and_label_batch(float_image, label,
+  return  _generate_image_and_label_batch(float_image, label, name,
                                          min_queue_examples, batch_size,
                                          shuffle=False)
 
@@ -156,7 +157,7 @@ def test_input():
   with tf.Graph().as_default():
       init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-      xTrain, yTrain = inputs(os.getcwd(), batch_size, 'Test')
+      xTrain, yTrain, filenames = inputs(os.getcwd(), batch_size, 'Test')
 
       s = tf.Session()
 
@@ -172,7 +173,7 @@ def test_input():
           print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(batch_size) + '\tSamples: ' + str(NUM_EXAMPLES_PER_EPOCH) + '\tSteps: ' + str(steps_per_epoch * num_epochs))
 
           while not coord.should_stop() and epoch < num_epochs:
-              X, Y = s.run([xTrain, yTrain])
+              X, Y, names = s.run([xTrain, yTrain, filenames])
               step += 1
               #print(str(step), 'X=', str(X), 'Y=', str(Y))
               print(str(step), 'Y=', str(Y))

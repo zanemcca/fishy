@@ -46,39 +46,38 @@ def _variable_with_weight_decay(name, shape, stddev, wd):
   return var
 
 
+"""
+Returns:
+  images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
+  labels: Labels. 1D tensor of [batch_size] size.
 
+Raises:
+  ValueError: If no data_dir
+"""
 def inputs(set_type, limit=const.IMAGE_LIMIT):
-  """
-  Returns:
-    images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-    labels: Labels. 1D tensor of [batch_size] size.
-
-  Raises:
-    ValueError: If no data_dir
-  """
-
   if not FLAGS.data_dir:
     raise ValueError('Please supply a data_dir')
 
-  images, labels = fishy_input.inputs(data_dir=FLAGS.data_dir,
+  images, labels, names = fishy_input.inputs(data_dir=FLAGS.data_dir,
                                         batch_size=FLAGS.batch_size,
                                         set_type=set_type,
                                         limit=limit)
   if FLAGS.use_fp16:
     images = tf.cast(images, tf.float16)
     labels = tf.cast(labels, tf.float16)
-  return images, labels
+  return images, labels, names
 
-def inference(images, reuse=None):
-  """Build the model
 
-  Args:
-    images: Images returned from inputs()
 
-  Returns:
-    Logits.
-  """
+"""Build the model
 
+Args:
+  images: Images returned from inputs()
+
+Returns:
+  Logits.
+"""
+def inference(images, reuse=None, batch_size=FLAGS.batch_size):
   # Convolution layer (64 outputs channels for every pixel)
   with tf.variable_scope('conv1', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
@@ -101,7 +100,7 @@ def inference(images, reuse=None):
 
   with tf.variable_scope('local1', reuse=reuse) as scope:
     # Move everything into depth so we can perform a single matrix multiply.
-    reshape = tf.reshape(pool, [FLAGS.batch_size, -1])
+    reshape = tf.reshape(pool, [batch_size, -1])
     dim = reshape.get_shape()[1].value
     weights = _variable_with_weight_decay('weights', shape=[dim, 384],
                                                   stddev=0.04, wd=0.004)
@@ -154,7 +153,6 @@ def train(total_loss):
 
   return apply_grad
 
-
 def main(argv=None):
   total_samples = 8000 
   min_epochs = 5
@@ -162,7 +160,7 @@ def main(argv=None):
   with tf.Graph().as_default():
     num_examples = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
     cv_length = fishy_input.get_input_length(FLAGS.data_dir, 'CV')
-    xCV, yCV = inputs('CV')
+    xCV, yCV, nameCV = inputs('CV')
 
     X = tf.placeholder(tf.float32, name='X', shape=(FLAGS.batch_size, const.IMAGE_WIDTH, const.IMAGE_HEIGHT, const.IMAGE_CHANNELS))
     Y = tf.placeholder(tf.int32, name='Y', shape=(FLAGS.batch_size,))
@@ -178,10 +176,16 @@ def main(argv=None):
 
     global_step = tf.cast(get_global_step(), tf.int64)
 
+    saver = tf.train.Saver()
+
     init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
-    train_log = FLAGS.log_dir + '/train/' + str(const.EVAL_LOG_NUMBER)
-    cv_log = FLAGS.log_dir + '/cv/' + str(const.EVAL_LOG_NUMBER)
+    name = FLAGS.name
+    if name == str(const.LOG_NUMBER):
+      name = str(const.EVAL_LOG_NUMBER)
+
+    train_log = FLAGS.log_dir + '/train/' + name 
+    cv_log = FLAGS.log_dir + '/cv/' + name
 
     cv_writer = tf.summary.FileWriter(cv_log, graph=tf.get_default_graph())
     train_writer = tf.summary.FileWriter(train_log, graph=tf.get_default_graph())
@@ -193,8 +197,8 @@ def main(argv=None):
 
     summary = tf.summary.merge_all()
 
-    for i in [1, 3, 10, 30, 100, 300, 1000]:
-      xTrain, yTrain = inputs('Train', i)
+    for i in [10, 30, 100, 300, 500, 700]:
+      xTrain, yTrain, nameTrain = inputs('Train', i)
 
       num_samples = i * const.NUM_CLASSES
       steps_per_epoch = math.ceil(float(num_samples) / FLAGS.batch_size)
@@ -219,6 +223,8 @@ def main(argv=None):
             while not coord.should_stop() and epoch < num_epochs:
               (x, y) = s.run([xTrain, yTrain])
               (step, accur, cst, _) = s.run([global_step, accuracy, lss, opt], feed_dict={ X: x, Y: y })
+
+              save_path = saver.save(s, '/tmp/fishy_model.ckpt')
 
               if(epoch == num_epochs - 1):
                 training_cost += cst
