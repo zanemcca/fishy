@@ -11,8 +11,8 @@ def train():
 
   with tf.Graph().as_default():
 
-      xTrain, yTrain = fishy.inputs('Train')
-      num_examples_per_epoch = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
+      xTrain, yTrain, names = fishy.inputs('train.csv')
+      num_examples_per_epoch = fishy_input.get_input_length('train.csv')
 
       predictions, logits = fishy.inference(xTrain)
 

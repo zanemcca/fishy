@@ -54,13 +54,12 @@ Returns:
 Raises:
   ValueError: If no data_dir
 """
-def inputs(set_type, limit=const.IMAGE_LIMIT):
+def inputs(filename, limit=const.IMAGE_LIMIT):
   if not FLAGS.data_dir:
     raise ValueError('Please supply a data_dir')
 
-  images, labels, names = fishy_input.inputs(data_dir=FLAGS.data_dir,
+  images, labels, names = fishy_input.inputs(filename=filename,
                                         batch_size=FLAGS.batch_size,
-                                        set_type=set_type,
                                         limit=limit)
   if FLAGS.use_fp16:
     images = tf.cast(images, tf.float16)
@@ -158,9 +157,9 @@ def main(argv=None):
   min_epochs = 5
 
   with tf.Graph().as_default():
-    num_examples = fishy_input.get_input_length(FLAGS.data_dir, 'Train')
-    cv_length = fishy_input.get_input_length(FLAGS.data_dir, 'CV')
-    xCV, yCV, nameCV = inputs('CV')
+    num_examples = fishy_input.get_input_length('train.csv')
+    cv_length = fishy_input.get_input_length('cv.csv')
+    xCV, yCV, nameCV = inputs('cv.csv')
 
     X = tf.placeholder(tf.float32, name='X', shape=(FLAGS.batch_size, const.IMAGE_WIDTH, const.IMAGE_HEIGHT, const.IMAGE_CHANNELS))
     Y = tf.placeholder(tf.int32, name='Y', shape=(FLAGS.batch_size,))
@@ -198,7 +197,7 @@ def main(argv=None):
     summary = tf.summary.merge_all()
 
     for i in [10, 30, 100, 300, 500, 700]:
-      xTrain, yTrain, nameTrain = inputs('Train', i)
+      xTrain, yTrain, nameTrain = inputs('train.csv', i)
 
       num_samples = i * const.NUM_CLASSES
       steps_per_epoch = math.ceil(float(num_samples) / FLAGS.batch_size)

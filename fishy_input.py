@@ -66,7 +66,7 @@ def tfPrint(tensor):
     sess.close()
 
 def get_input_length(filename):
-  return min(len(gs.read_set(filename)), const.IMAGE_LIMIT)
+  return min(len(gs.read_set(os.path.join(FLAGS.data_dir, filename))), const.IMAGE_LIMIT)
 
 def inputs(filename, batch_size, limit=const.IMAGE_LIMIT):
   """

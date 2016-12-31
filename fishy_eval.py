@@ -11,7 +11,7 @@ import fishy_output as out
 
 FLAGS = const.FLAGS
 
-def evaluate(set_type='Test'):
+def evaluate(filename='test.csv'):
   print('Starting the session')
 
   with tf.Graph().as_default():
@@ -19,11 +19,9 @@ def evaluate(set_type='Test'):
     if not FLAGS.data_dir:
       raise ValueError('Please supply a data_dir')
 
-    num_examples_per_epoch = fishy_input.get_input_length(FLAGS.data_dir,set_type)
+    num_examples_per_epoch = fishy_input.get_input_length(filename)
     batch_size = num_examples_per_epoch
-    images, labels, names = fishy_input.inputs(data_dir=FLAGS.data_dir,
-                                          batch_size=batch_size,
-                                          set_type=set_type)
+    images, labels, names = fishy_input.inputs(filename=filename, batch_size=batch_size)
 
     predictions,_ = fishy.inference(images, batch_size=batch_size)
     
@@ -77,4 +75,4 @@ def evaluate(set_type='Test'):
           print('requesting stop evaluate')
 
 if __name__ == '__main__':
-  evaluate('CV')
+  evaluate('test.csv')
