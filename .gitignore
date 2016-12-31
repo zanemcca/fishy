@@ -6,4 +6,5 @@ test_stg1/
 cv.csv
 test.csv
 train.csv
-
+all.csv
+submission_input.csv
