@@ -11,7 +11,7 @@ import fishy_output as out
 
 FLAGS = const.FLAGS
 
-def evaluate(filename='test.csv'):
+def evaluate(filename='submission_input.csv'):
   print('Starting the session')
 
   with tf.Graph().as_default():
@@ -47,16 +47,22 @@ def evaluate(filename='test.csv'):
           total = 0
           correct = 0
           output = []
+          completed_names = []
           while not coord.should_stop():
               step += 1
               (stp, loss, acc, files, probs) = s.run([global_step, lss, accuracy, names, predictions])
               
               for i in range(len(files)):
-                data = {}
-                data['image'] = files[i]
-                for j,v in enumerate(probs[i]):
-                  data[const.CLASSES[j]] = v
-                output.append(data)
+                name = os.path.basename(files[i])
+                if(name not in completed_names):
+                  completed_names.append(name)
+                  data = {}
+                  data['image'] = os.path.basename(files[i])
+                  for j,v in enumerate(probs[i]):
+                    data[const.CLASSES[j]] = v
+                  output.append(data)
+                else:
+                  print(name)
 
               print(str(step) + '\tAccuracy = ' + str(round(acc, 3))+ '\tLoss = ' + str(loss))
 
@@ -65,7 +71,7 @@ def evaluate(filename='test.csv'):
 
               if step == steps_per_epoch:
                 print('\nThe final Cost = ' + str(round(total / steps_per_epoch, 3)) + ' with a ' + str(round(correct * 100 / steps_per_epoch)) + '% of predictions being successful')
-                out.write_output(FLAGS.name + '.csv', output)
+                out.write_output(os.path.join('output', 'submission_' + FLAGS.name + '.csv'), output)
                 return correct / steps_per_epoch 
 
       except tf.errors.OutOfRangeError:
@@ -75,4 +81,5 @@ def evaluate(filename='test.csv'):
           print('requesting stop evaluate')
 
 if __name__ == '__main__':
-  evaluate('test.csv')
+  #evaluate('test.csv')
+  evaluate('submission_input.csv')

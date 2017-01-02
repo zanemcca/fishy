@@ -1,10 +1,5 @@
 **DS_STORE
 *.zip
-train/
-test_stg1/
 **.pyc
-cv.csv
-test.csv
-train.csv
-all.csv
-submission_input.csv
+output/
+input/

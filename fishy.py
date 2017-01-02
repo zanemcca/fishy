@@ -157,7 +157,7 @@ def main(argv=None):
   min_epochs = 5
 
   with tf.Graph().as_default():
-    num_examples = fishy_input.get_input_length('train.csv')
+    num_examples = fishy_input.get_input_length(FLAGS.training_file)
     cv_length = fishy_input.get_input_length('cv.csv')
     xCV, yCV, nameCV = inputs('cv.csv')
 
@@ -197,7 +197,7 @@ def main(argv=None):
     summary = tf.summary.merge_all()
 
     for i in [10, 30, 100, 300, 500, 700]:
-      xTrain, yTrain, nameTrain = inputs('train.csv', i)
+      xTrain, yTrain, nameTrain = inputs(FLAGS.training_file, i)
 
       num_samples = i * const.NUM_CLASSES
       steps_per_epoch = math.ceil(float(num_samples) / FLAGS.batch_size)
