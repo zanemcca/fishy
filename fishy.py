@@ -175,7 +175,9 @@ def get_global_step():
 def train(total_loss):
   global_step = get_global_step()
 
-  opt = tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
+  learning_rate = tf.train.exponential_decay(FLAGS.learning_rate, global_step, 1, 0.99)
+
+  opt = tf.train.GradientDescentOptimizer(learning_rate)
   grads = opt.compute_gradients(total_loss)
 
   apply_grad = opt.apply_gradients(grads, global_step=global_step)
