@@ -21,7 +21,7 @@ EVAL_LOG_NUMBER = max(fo.get_next_run_num('/tmp/fishy_log/train'), fo.get_next_r
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer('batch_size', 256, """Number of images per batch""")
-tf.app.flags.DEFINE_integer('num_epochs', 10, """Number of epochs to use for training""")
+tf.app.flags.DEFINE_integer('num_epochs', 100, """Number of epochs to use for training""")
 tf.app.flags.DEFINE_string('data_dir', os.path.join(os.getcwd(), 'input'), """The data directory""")
 tf.app.flags.DEFINE_string('log_dir', '/tmp/fishy_log', """The log directory""")
 tf.app.flags.DEFINE_string('training_file', 'train.csv', """The training file""")

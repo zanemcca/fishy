@@ -22,7 +22,6 @@ def get_next_run_num(data_dir):
       n = int(d)
     except ValueError:
       threw = True
-      print('Failed to cast ' + d)
 
     if(~threw):
       nums.append(n)

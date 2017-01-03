@@ -8,6 +8,7 @@ import numpy as np
 import fishy_input
 import fishy_constants as const
 import fishy_output as out
+from tensorflow.python.ops import math_ops
 
 FLAGS = const.FLAGS
 
@@ -25,7 +26,7 @@ def evaluate(filename='submission_input.csv'):
 
     predictions,_ = fishy.inference(images, batch_size=batch_size)
     
-    lss = tf.contrib.losses.log_loss(predictions, tf.one_hot(labels, const.NUM_CLASSES), 1, 1e-15) 
+    lss = fishy.log_loss(predictions, labels)
 
     correct_prediction = tf.equal(tf.cast(labels, tf.int64), tf.argmax(predictions, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32)) 
@@ -81,5 +82,5 @@ def evaluate(filename='submission_input.csv'):
           print('requesting stop evaluate')
 
 if __name__ == '__main__':
-  #evaluate('test.csv')
-  evaluate('submission_input.csv')
+  evaluate('test.csv')
+  #evaluate('submission_input.csv')

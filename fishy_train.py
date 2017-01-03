@@ -16,7 +16,8 @@ def train():
 
       predictions, logits = fishy.inference(xTrain)
 
-      lss = fishy.loss(logits, yTrain)
+      #lss = fishy.loss(logits, yTrain)
+      lss = fishy.log_loss(predictions, yTrain)
 
       opt = fishy.train(lss)
 

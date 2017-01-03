@@ -4,6 +4,7 @@ import tensorflow as tf
 import fishy_input
 import numpy as np
 import fishy_constants as const
+from tensorflow.python.ops import math_ops
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -77,14 +78,15 @@ Returns:
   Logits.
 """
 def inference(images, reuse=None, batch_size=FLAGS.batch_size):
-  # Convolution layer (64 outputs channels for every pixel)
+  # Convolution layer
+  channels = 8 
   with tf.variable_scope('conv1', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
-                                          shape=[5, 5, const.IMAGE_CHANNELS, 64],  # [filterHeight, filterWidth, in_channels, output_channels]
+                                          shape=[5, 5, const.IMAGE_CHANNELS, channels],  # [filterHeight, filterWidth, in_channels, output_channels]
                                                                 # => [filterHeight * filterWidth * in_channels, output_channels]
                                           stddev=5e-2,
                                           wd=0.0) 
-    biases = _variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
+    biases = _variable_on_cpu('biases', [channels], tf.constant_initializer(0.0))
     conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
     pre_activation = tf.nn.bias_add(conv, biases)
     conv1 = tf.nn.relu(pre_activation, name=scope.name)
@@ -97,9 +99,30 @@ def inference(images, reuse=None, batch_size=FLAGS.batch_size):
   pool = tf.nn.max_pool(norm, ksize=[1, 3, 3, 1],
                                strides=[1, 2, 2, 1], padding='SAME', name='pool')
 
+  # Convolution layer 2 (64 outputs channels for every pixel)
+  channels2 = 8
+  with tf.variable_scope('conv2', reuse=reuse) as scope:
+    kernel = _variable_with_weight_decay('weights',
+                                          shape=[5, 5, channels, channels2],
+                                          stddev=5e-2,
+                                          wd=0.0) 
+    biases = _variable_on_cpu('biases2', [channels2], tf.constant_initializer(0.0))
+    conv = tf.nn.conv2d(pool, kernel, [1, 1, 1, 1], padding='SAME')
+    pre_activation = tf.nn.bias_add(conv, biases)
+    conv2 = tf.nn.relu(pre_activation, name=scope.name)
+
+  # norm
+  norm2 = tf.nn.lrn(conv2, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75,
+                          name='norm2')
+
+  # pool
+  pool2 = tf.nn.max_pool(norm2, ksize=[1, 3, 3, 1],
+                               strides=[1, 2, 2, 1], padding='SAME', name='pool2')
+
+
   with tf.variable_scope('local1', reuse=reuse) as scope:
     # Move everything into depth so we can perform a single matrix multiply.
-    reshape = tf.reshape(pool, [batch_size, -1])
+    reshape = tf.reshape(pool2, [batch_size, -1])
     dim = reshape.get_shape()[1].value
     weights = _variable_with_weight_decay('weights', shape=[dim, 384],
                                                   stddev=0.04, wd=0.004)
@@ -116,18 +139,25 @@ def inference(images, reuse=None, batch_size=FLAGS.batch_size):
 
     logits = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
 
-    predictions = tf.nn.softmax(logits)
+    predictions = tf.nn.sigmoid(logits)
 
   return predictions, logits
 
+def log_loss(predictions, labels):
+  labels = tf.cast(labels, tf.int64)
+
+  predictions = tf.truediv(predictions, tf.reduce_sum(predictions, 1, keep_dims=True))
+  predictions = tf.maximum(tf.minimum(predictions, 1 - 1e-15), 1e-15)
+  lss = -math_ops.multiply(tf.reduce_mean(math_ops.multiply(tf.one_hot(labels, const.NUM_CLASSES), math_ops.log(predictions))), const.NUM_CLASSES)
+
+  return lss
 
 def loss(logits, labels):
   labels = tf.cast(labels, tf.int64)
+
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels)
   cross_entropy_mean = tf.reduce_mean(cross_entropy)
-  #tf.Graph.add_to_collections('losses', cross_entropy_mean)
 
-  #return tf.Graph.add_n(tf.get_collection('losses'))
   return cross_entropy_mean
 
 def get_global_step():
@@ -166,7 +196,7 @@ def main(argv=None):
 
     predictions, logits = inference(X)
 
-    lss = loss(logits, Y)
+    lss = log_loss(predictions, Y)
 
     opt = train(lss)
 
@@ -222,6 +252,7 @@ def main(argv=None):
             while not coord.should_stop() and epoch < num_epochs:
               (x, y) = s.run([xTrain, yTrain])
               (step, accur, cst, _) = s.run([global_step, accuracy, lss, opt], feed_dict={ X: x, Y: y })
+              #(step, accur, probs, cst, _) = s.run([global_step, accuracy, predictions, lss, opt], feed_dict={ X: x, Y: y })
 
               save_path = saver.save(s, '/tmp/fishy_model.ckpt')
 
@@ -230,6 +261,7 @@ def main(argv=None):
                 training_accuracy += accur
       
               print('Step: ' + str(step) + ' \tAccuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst))
+              #print(probs)
               if (step + 1) % steps_per_epoch == 0:
                   epoch += 1
                   print('') 
