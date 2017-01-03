@@ -26,5 +26,6 @@ tf.app.flags.DEFINE_string('data_dir', os.path.join(os.getcwd(), 'input'), """Th
 tf.app.flags.DEFINE_string('log_dir', '/tmp/fishy_log', """The log directory""")
 tf.app.flags.DEFINE_string('training_file', 'train.csv', """The training file""")
 tf.app.flags.DEFINE_string('name', str(LOG_NUMBER), """The name of the run""")
-tf.app.flags.DEFINE_integer('use_fp16', False, """Train using floating point 16""")
-tf.app.flags.DEFINE_float('learning_rate', 0.05, """Learning Rate""")
+tf.app.flags.DEFINE_boolean('use_fp16', False, """A flag to indicate if floating point 16 should be used""")
+tf.app.flags.DEFINE_float('learning_rate', 0.1, """Learning Rate""")
+tf.app.flags.DEFINE_float('convergence_limit', 0.03, """Convergence Limit""")

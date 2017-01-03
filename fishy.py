@@ -248,34 +248,55 @@ def main(argv=None):
             print('\nTraining...\n')
             print('Epochs: '+ str(num_epochs) + '\tBatch_Size: ' + str(FLAGS.batch_size) + '\tSamples: ' + str(num_samples) + '\tSteps: ' + str(steps_per_epoch * num_epochs) + '\n')
             step = 0
-            training_cost = 0
-            training_accuracy = 0
             last_error = 0
-            while not coord.should_stop() and epoch < num_epochs:
+            delta_error = 100
+            delta_decay = 0.9
+            #while not coord.should_stop() and epoch < num_epochs:
+            while not coord.should_stop():
               (x, y) = s.run([xTrain, yTrain])
               (step, accur, cst, _) = s.run([global_step, accuracy, lss, opt], feed_dict={ X: x, Y: y })
               #(step, accur, probs, cst, _) = s.run([global_step, accuracy, predictions, lss, opt], feed_dict={ X: x, Y: y })
 
+              delta_error *= delta_decay
+              delta_error += (1 - delta_decay) * abs(cst - last_error)
+
               save_path = saver.save(s, '/tmp/fishy_model.ckpt')
 
-              if(epoch == num_epochs - 1):
-                training_cost += cst
-                training_accuracy += accur
-      
-              print('Step: ' + str(step) + ' \tAccuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst))
+              print('Step: ' + str(step) + ' \tAccuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst) + '\tdError: ' + str(delta_error))
               #print(probs)
+              if(delta_error < FLAGS.convergence_limit):
+                break;
+              else:
+                last_error = cst
+
               if (step + 1) % steps_per_epoch == 0:
                   epoch += 1
                   print('') 
-
-            training_cost /= steps_per_epoch
-            training_accuracy /= steps_per_epoch
-            summ = s.run(summary, feed_dict={ Loss: training_cost, Accuracy: training_accuracy })
-            train_writer.add_summary(summ, num_samples)
             
+            # Evaluate on training set
+            training_cost = 0
+            training_accuracy = 0
+            stp = 0
+            print('\nEvaluating Training Set...\n')
+            while not coord.should_stop():
+              (x, y) = s.run([xTrain, yTrain])
+              (accur, cst) = s.run([accuracy, lss], feed_dict={ X: x, Y: y })
+
+              training_cost += cst
+              training_accuracy += accur
+      
+              stp += 1
+              print('Evaluation Train - Accuracy: ' + str(round(accur, 3)) + '\tCost: ' +  str(cst))
+              if stp == steps_per_epoch:
+                training_cost /= steps_per_epoch
+                training_accuracy /= steps_per_epoch
+                summ = s.run(summary, feed_dict={ Loss: training_cost, Accuracy: training_accuracy })
+                train_writer.add_summary(summ, num_samples)
+                break
+
 
             # Evaluation phase
-            print('\nEvaluating...\n')
+            print('\nEvaluating Cross-Validation Set...\n')
             steps_per_epoch = math.ceil(float(cv_length) / FLAGS.batch_size)
             eval_cost = 0
             eval_accuracy = 0
